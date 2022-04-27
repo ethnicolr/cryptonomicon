@@ -15,7 +15,6 @@
                                 v-model="ticker"
                                 v-on:keydown.enter="add"
                                 type="text"
-                                v-on:change="test"
                                 name="wallet"
                                 id="wallet"
                                 class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
@@ -31,7 +30,7 @@
                             {{ coin }}
                         </span>
 
-                        <div v-if="exist" class="text-sm text-red-600">
+                        <div v-if="isExist" class="text-sm text-red-600">
                             Такой тикер уже добавлен
                         </div>
                     </div>
@@ -170,7 +169,8 @@
 </template>
 
 <script>
-import { loadTickers } from './api'
+// bg-red-100
+import { subscribeToTicker } from './api'
 export default {
     name: 'App',
     data() {
@@ -183,7 +183,7 @@ export default {
 
             graph: [],
 
-            exist: false,
+            isExist: false,
 
             coinList: [],
 
@@ -200,16 +200,15 @@ export default {
         const tickersData = localStorage.getItem('cryptonomicon-list')
         if (tickersData) {
             this.tickers = JSON.parse(tickersData)
+            this.tickers.forEach((ticker) => {
+                subscribeToTicker(ticker.name, (newPrice) =>
+                    this.updateTicker(ticker.name, newPrice)
+                )
+            })
         }
-        setTimeout(() => {
-            this.updateTickers
-        }, 5000)
 
         const windowData = Object.fromEntries(
             new URL(window.location).searchParams.entries()
-        )
-        console.log(
-            Object.fromEntries(new URL(window.location).searchParams.entries())
         )
 
         if (windowData.page) {
@@ -221,13 +220,13 @@ export default {
         }
     },
 
-    updated() {
-        this.$nextTick(function() {
-            if (!this.isCoinExist) {
-                this.exist = false
-            }
-        })
-    },
+    // updated() {
+    //     this.$nextTick(function () {
+    //         if (!this.isCoinExist) {
+    //             this.isExist = false
+    //         }
+    //     })
+    // },
     computed: {
         isCoinExist() {
             return this.tickers.some(
@@ -291,33 +290,20 @@ export default {
         selectCoin(coin) {
             this.ticker = coin
             if (this.isCoinExist) {
-                this.exist = true
+                this.isExist = true
                 return
             }
         },
 
-        async updateTickers() {
-            if (!this.tickers.length) {
-                return
-            }
-
-            const excangeData = await loadTickers(
-                this.tickers.map((t) => t.name)
-            )
-            this.tickers.forEach((ticker) => {
-                const price = excangeData[ticker.name.toUpperCase()]
-                if (!price) {
-                    ticker.price = '-'
-                    return
-                }
-                const normalizedPrice = 1 / price
-                ticker.price = normalizedPrice
-            })
-            // this.tickers.find((t) => t.name === tickerName).price
-            //   excangeData.USD > 1 ? excangeData.USD.toFixed(2) : excangeData.USD.toPrecision(2)
-            // if (this.selectedTicker?.name === tickerName) {
-            //   this.graph.push(excangeData.USD)
-            // }
+        updateTicker(tickerName, price) {
+            this.tickers
+                .filter((t) => t.name === tickerName)
+                .forEach((t) => {
+                    if (t === this.selectedTicker) {
+                        this.graph.push(price)
+                    }
+                    t.price = price
+                })
         },
 
         add() {
@@ -327,13 +313,15 @@ export default {
             }
 
             if (this.isCoinExist) {
-                this.exist = true
+                this.isExist = true
                 return
             }
             this.tickers = [...this.tickers, currentTicker]
             this.ticker = ''
-            this.updateTickers(currentTicker.name)
             this.filter = ''
+            subscribeToTicker(currentTicker.name, (newPrice) =>
+                this.updateTicker(currentTicker.name, newPrice)
+            )
         },
 
         handleDelete(tickerToRemove) {
@@ -352,22 +340,27 @@ export default {
             this.graph = []
         },
 
+        ticker() {
+            this.isExist = false
+        },
+
         tickers() {
-            // ?? не сработал чому?
-            console.log('test')
             localStorage.setItem(
                 'cryptonomicon-list',
                 JSON.stringify(this.tickers)
             )
         },
+
         paginatedTickers() {
             if (this.paginatedTickers.length === 0 && this.page > 1) {
                 this.page -= 1
             }
         },
+
         filter() {
             this.page = 1
         },
+
         pageStateOption(v) {
             window.history.pushState(
                 null,
