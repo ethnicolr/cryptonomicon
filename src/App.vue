@@ -302,7 +302,7 @@ export default {
                     if (t === this.selectedTicker) {
                         this.graph.push(price)
                     }
-                    t.price = price
+                    t.price = this.formatPrice(price)
                 })
         },
 
