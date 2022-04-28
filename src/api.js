@@ -20,23 +20,30 @@ socket.addEventListener('message', async (e) => {
         PRICE: newPrice,
         PARAMETER: parameter,
     } = JSON.parse(e.data)
+
     if (type === INVALID_SUB) {
-        const [, , ticker, currency] = parameter.split('~')
-        if (currency === 'USD') {
-            subscribeToTickerOnWs(ticker, 'BTC')
-        } 
+        [, , currency, exchange] = parameter.split('~')
+        if (exchange === 'USD') {
+            subscribeToTickerOnWs(currency, 'BTC')
+            tickersHandlers.set(currency, {
+                ...tickersHandlers.get(currency),
+                exchange: 'BTC',
+            })
+        } else {
+            newPrice = null
+        }
     } else if (type !== AGGREGATE_INDEX || newPrice === undefined) {
         return
     }
-    if (type !== AGGREGATE_INDEX || newPrice === undefined) {
-        return
-    }
-    if (exchange === 'BTC') {
-        const response = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD&api_key=${API_KEY}`)
-        const { USD: btcRate } = await response.json();
+
+    if (exchange === 'BTC' && type === AGGREGATE_INDEX) {
+        const response = await fetch(
+            `https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD&api_key=${API_KEY}`
+        )
+        const { USD: btcRate } = await response.json()
         newPrice = newPrice * btcRate
     }
-    const handlers = tickersHandlers.get(currency) ?? []
+    const handlers = tickersHandlers.get(currency).cb ?? []
     handlers.forEach((fn) => fn(newPrice))
 })
 
@@ -57,27 +64,28 @@ function sendToWebSocket(message) {
     )
 }
 
-function subscribeToTickerOnWs(ticker, currency = 'USD') {
+function subscribeToTickerOnWs(ticker, exchange) {
     sendToWebSocket({
         action: 'SubAdd',
-        subs: [`5~CCCAGG~${ticker}~${currency}`],
+        subs: [`5~CCCAGG~${ticker}~${exchange}`],
     })
 }
 
-function unsubscribeFromTickerOnWs(ticker, currency = 'USD') {
+function unsubscribeFromTickerOnWs(ticker, exchange) {
     sendToWebSocket({
         action: 'SubRemove',
-        subs: [`5~CCCAGG~${ticker}~${currency}`],
+        subs: [`5~CCCAGG~${ticker}~${exchange}`],
     })
 }
 
-export const subscribeToTicker = (ticker, cb) => {
-    const subscribers = tickersHandlers.get(ticker) || []
-    tickersHandlers.set(ticker, [...subscribers, cb])
-    subscribeToTickerOnWs(ticker)
+export const subscribeToTicker = (ticker, cb, exchange = 'USD') => {
+    const subscribers = tickersHandlers.get(ticker) || { exchange, cb: [] }
+    tickersHandlers.set(ticker, { exchange, cb: [...subscribers.cb, cb] })
+    subscribeToTickerOnWs(ticker, exchange)
 }
 
 export const unsubscribeFromTicker = (ticker) => {
+    const { exchange } = tickersHandlers.get(ticker)
     tickersHandlers.delete(ticker)
-    unsubscribeFromTickerOnWs(ticker)
+    unsubscribeFromTickerOnWs(ticker, exchange)
 }
